@@ -110,6 +110,11 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
         return false;
     }
 
+    if (msg.msgid == MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE || msg.msgid == MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE) {
+        learn_route(in_channel, msg);
+        return true;   // “process locally”, no forwarding
+    }
+
     // learn new routes including private channels
     // so that find_mav_type works for all channels
     learn_route(in_link, msg);
