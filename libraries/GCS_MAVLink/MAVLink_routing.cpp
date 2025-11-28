@@ -26,6 +26,8 @@
 #include "GCS.h"
 #include "MAVLink_routing.h"
 
+#include <AP_ADSB/AP_ADSB.h>
+
 extern const AP_HAL::HAL& hal;
 
 #define ROUTING_DEBUG 0
@@ -99,7 +101,7 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
     // of mavlink messages to a private channel (Solo Gimbal case)
     if (!gopro_status_check && (msg.msgid == MAVLINK_MSG_ID_GOPRO_HEARTBEAT)) {
        gopro_status_check = true;
-       gcs().send_text(MAV_SEVERITY_NOTICE, "GoPro in Solo gimbal detected");
+       GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "GoPro in Solo gimbal detected");
     }
 #endif // HAL_SOLO_GIMBAL_ENABLED
 
@@ -110,11 +112,6 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
         return false;
     }
 
-    if (msg.msgid == MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE || msg.msgid == MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE) {
-        learn_route(in_channel, msg);
-        return true;   // “process locally”, no forwarding
-    }
-
     // learn new routes including private channels
     // so that find_mav_type works for all channels
     learn_route(in_link, msg);
@@ -122,6 +119,10 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
     if (msg.msgid == MAVLINK_MSG_ID_RADIO ||
         msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS) {
         // don't forward RADIO packets
+        return true;
+    }
+
+    if (msg.msgid == MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE || msg.msgid == MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE) {
         return true;
     }
 
@@ -135,10 +136,15 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
         return true;
     }
 
+#if HAL_ADSB_ENABLED
     if (msg.msgid == MAVLINK_MSG_ID_ADSB_VEHICLE) {
-        // ADSB packets are not forwarded, they have their own stream rate
-        return true;
+        // if enabled ADSB packets are not forwarded, they have their own stream rate
+        const AP_ADSB *adsb = AP::ADSB();
+        if ((adsb != nullptr) && (adsb->enabled())) {
+            return true;
+        }
     }
+#endif
 
     // extract the targets for this packet
     int16_t target_system = -1;
@@ -197,7 +203,7 @@ bool MAVLink_routing::check_and_forward(GCS_MAVLINK &in_link, const mavlink_mess
 #if ROUTING_DEBUG
                     ::printf("fwd msg %u from chan %u on chan %u sysid=%d compid=%d\n",
                              msg.msgid,
-                             (unsigned)in_link->get_chan(),
+                             (unsigned)in_link.get_chan(),
                              (unsigned)routes[i].channel,
                              (int)target_system,
                              (int)target_component);
